@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f6b78">
-<title>Enteral Osmolality Calculator v7.0</title>
+<title>Enteral Osmolality Calculator v8.0</title>
 <style>
 :root{--teal:#0f6b78;--bg:#f4f8f8;--line:#d8e5e6;--ink:#17343a;--muted:#708387}
 *{box-sizing:border-box}body{margin:0;background:#eaf3f4;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}
@@ -29,6 +29,13 @@ main{padding:17px}.section{font-size:12px;text-transform:uppercase;letter-spacin
 .clearall{width:100%;padding:11px;border:0;background:transparent;color:#65777b;font-weight:750;font-size:14px;margin-top:6px}.primary{width:100%;padding:14px;border:0;border-radius:12px;background:var(--teal);color:white;font-weight:800;font-size:15px}
 .result{display:none}.big{font-size:40px;font-weight:850;color:var(--teal)}.unit{font-size:14px;color:var(--muted);font-weight:700}
 .break{padding:9px 0;border-bottom:1px solid var(--line);font-size:12px}.break:last-child{border:0}
+.favoritehead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.savefav{width:100%;padding:11px;border:1px solid #9fc3c6;border-radius:11px;background:#f7fbfb;color:var(--teal);font-weight:800;margin-top:8px}
+.favcard .favtitle{font-size:16px;font-weight:800;color:#28484b}
+.favactions{display:flex;gap:8px;margin-top:12px}
+.favactions button{flex:1;padding:10px 8px;border-radius:10px;font-weight:750;font-size:13px}
+.loadfav{border:0;background:var(--teal);color:#fff}
+.deletefav{border:1px solid #d8b8b5;background:#fff;color:#8a4a45}
 .historyhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .historyclear{border:0;background:transparent;color:#8a5550;font-weight:750;font-size:13px;padding:8px}
 .historycard{cursor:pointer}
@@ -48,14 +55,14 @@ nav button{flex:1;border:0;background:white;color:#829397;font-size:11px;font-we
 </head>
 <body>
 <div class="app">
-<header><h1>Enteral Osmolality</h1><div class="sub">Weighted osmolality calculator · v7.0 History</div></header>
+<header><h1>Enteral Osmolality</h1><div class="sub">Weighted osmolality calculator · v8.0 Favorites</div></header>
 <main>
 <section id="calc" class="screen active">
 <div class="section">Feeds</div>
 <div class="card" id="feeds"></div>
 <div class="section">Medications</div>
 <div class="card" id="meds"></div>
-<div class="card"><button class="primary" id="calculate">Calculate Total Osmolality</button><button class="clearall" type="button" onclick="clearAll()">Clear all</button><div id="error" class="small" style="margin-top:8px"></div></div>
+<div class="card"><button class="primary" id="calculate">Calculate Total Osmolality</button><button class="clearall" type="button" onclick="clearAll()">Clear all</button><button class="savefav" type="button" onclick="saveFavorite()">☆ Save as favorite</button><div id="error" class="small" style="margin-top:8px"></div></div>
 <div class="card result" id="result"></div>
 </section>
 <section id="history" class="screen">
@@ -257,7 +264,60 @@ function clearHistory(){
  localStorage.setItem("eo_history","[]");
  renderHistory();
 }
-function renderFavorites(){document.getElementById("favoriteList").innerHTML='<div class="card empty">Favorites will appear here in the next refinement.</div>'}
+function currentComponentsForFavorite(){
+ const comps=[];
+ ["feeds","meds"].forEach(type=>{
+  document.querySelectorAll('.component[data-type="'+type+'"]').forEach(c=>{
+   const name=(c.dataset.name||"").trim(), raw=c.querySelector(".volume").value.trim();
+   if(name)comps.push({type,name,volume:raw});
+  });
+ });
+ return comps;
+}
+function saveFavorite(){
+ const comps=currentComponentsForFavorite();
+ if(!comps.length){alert("Add at least one feed or medication before saving a favorite.");return}
+ const missing=comps.filter(c=>c.volume===""||!Number.isFinite(Number(c.volume))||Number(c.volume)<=0);
+ if(missing.length){alert("Enter a volume greater than 0 mL for every selected component before saving.");return}
+ const name=prompt("Name this favorite:");
+ if(name===null)return;
+ const clean=name.trim();
+ if(!clean){alert("Please enter a name for this favorite.");return}
+ state.favorites.unshift({id:Date.now(),name:clean,components:comps});
+ localStorage.setItem("eo_favorites",JSON.stringify(state.favorites));
+ alert('Saved "'+clean+'" to Favorites.');
+}
+function renderFavorites(){
+ const e=document.getElementById("favoriteList");
+ if(!state.favorites.length){e.innerHTML='<div class="card empty">No favorites yet. Build a calculation, then tap “Save as favorite.”</div>';return}
+ e.innerHTML=state.favorites.map((f,i)=>'<div class="card favcard"><div class="favtitle">☆ '+esc(f.name)+'</div>'+
+  '<div class="small" style="margin-top:7px">'+f.components.map(c=>esc(c.name)+" ("+c.volume+" mL)").join(" · ")+'</div>'+
+  '<div class="favactions"><button type="button" class="loadfav" data-fload="'+i+'">Load into Calculator</button><button type="button" class="deletefav" data-fdelete="'+i+'">Delete</button></div></div>').join("");
+ e.querySelectorAll("[data-fload]").forEach(b=>b.addEventListener("click",()=>loadFavorite(Number(b.dataset.fload))));
+ e.querySelectorAll("[data-fdelete]").forEach(b=>b.addEventListener("click",()=>deleteFavorite(Number(b.dataset.fdelete))));
+}
+function loadFavorite(i){
+ const f=state.favorites[i];if(!f)return;
+ const feeds=f.components.filter(c=>c.type==="feeds").map(c=>({name:c.name,volume:String(c.volume)}));
+ const meds=f.components.filter(c=>c.type==="meds").map(c=>({name:c.name,volume:String(c.volume)}));
+ state.feeds=feeds.length?feeds:[{}];state.meds=meds.length?meds:[{}];
+ ["feeds","meds"].forEach(type=>{
+  const host=document.getElementById(type);host.innerHTML="";
+  state[type].forEach((saved,j)=>host.appendChild(makeComponent(type,j,saved)));addButton(type);
+ });
+ clearDisplayedResult();
+ document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+ document.getElementById("calc").classList.add("active");
+ document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("active",x.dataset.s==="calc"));
+ window.scrollTo({top:0,behavior:"smooth"});
+}
+function deleteFavorite(i){
+ const f=state.favorites[i];if(!f)return;
+ if(!confirm('Delete favorite "'+f.name+'"?'))return;
+ state.favorites.splice(i,1);
+ localStorage.setItem("eo_favorites",JSON.stringify(state.favorites));
+ renderFavorites();
+}
 function renderDB(){const q=document.getElementById("dbq").value.toLowerCase().trim();document.getElementById("dbList").innerHTML=DB.feeds.filter(x=>x.name.toLowerCase().includes(q)).slice(0,30).map(x=>'<div class="break"><b>'+esc(x.name)+'</b> — '+x.osmolality.toFixed(1)+' mOsm/kg</div>').join("")}
 document.getElementById("dbq").addEventListener("input",renderDB);
 init();
